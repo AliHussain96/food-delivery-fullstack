@@ -1,61 +1,66 @@
-import { restaurants } from "@/lib/restaurants";
-import { notFound } from "next/navigation";
+
 import { Suspense } from "react";
+import { notFound } from "next/navigation";
+import { getRestaurantById } from "@/services/restaurantService";
 
-// Generate static restaurant routes
-export function generateStaticParams() {
-  return restaurants.map((restaurant) => ({
-    id: restaurant.id,
-  }));
-}
-
-// Define params type
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-// Restaurant details component
-async function RestaurantContent({ params }: PageProps) {
+async function RestaurantDetails({
+  params,
+}: PageProps) {
   const { id } = await params;
 
-  const restaurant = restaurants.find(
-    (item) => item.id === id
-  );
+  const restaurant = await getRestaurantById(id);
 
   if (!restaurant) {
     notFound();
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
+    <div className="mx-auto max-w-5xl overflow-hidden rounded-xl bg-white shadow-lg">
       <img
         src={restaurant.image}
         alt={restaurant.name}
-        className="h-80 w-full rounded-xl object-cover"
+        className="h-80 w-full object-cover"
       />
 
-      <h1 className="mt-6 text-4xl font-bold">
-        {restaurant.name}
-      </h1>
+      <div className="p-8">
+        <h1 className="text-4xl font-bold text-gray-900">
+          {restaurant.name}
+        </h1>
 
-      <p className="mt-3 text-gray-600">
-        {restaurant.description}
-      </p>
+        <p className="mt-3 text-lg text-gray-600">
+          {restaurant.cuisine}
+        </p>
 
-      <p className="mt-4 text-gray-700">
-        ⭐ {restaurant.rating} • {restaurant.deliveryTime}
-      </p>
-    </main>
+        <p className="mt-5 text-gray-700">
+          {restaurant.description}
+        </p>
+
+        <div className="mt-6 flex flex-wrap gap-4">
+          <span className="rounded-lg bg-green-100 px-4 py-2 font-semibold text-green-700">
+            ⭐ {restaurant.rating}
+          </span>
+
+          <span className="rounded-lg bg-orange-100 px-4 py-2 font-semibold text-orange-700">
+            {restaurant.deliveryTime}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
-// Default export must be a React component
-export default function RestaurantDetailsPage({
-  params,
-}: PageProps) {
+export default function RestaurantDetailsPage(
+  props: PageProps
+) {
   return (
-    <Suspense fallback={<p className="p-10">Loading restaurant...</p>}>
-      <RestaurantContent params={params} />
-    </Suspense>
+    <main className="min-h-screen bg-gray-50 px-6 py-12">
+      <Suspense fallback={<p>Loading restaurant details...</p>}>
+        <RestaurantDetails params={props.params} />
+      </Suspense>
+    </main>
   );
 }
