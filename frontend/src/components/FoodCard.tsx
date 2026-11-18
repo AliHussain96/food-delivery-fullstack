@@ -1,42 +1,53 @@
 
+"use client";
+
+import { useCart } from "@/context/CartContext";
+import type { MenuItem } from "@/types/menu";
+
 interface FoodCardProps {
-  id: number;
-  name: string;
-  price: number;
-  image: string;
-  category: string;
+  item: MenuItem;
 }
 
-export default function FoodCard({
-  name,
-  price,
-  image,
-  category,
-}: FoodCardProps) {
+export default function FoodCard({ item }: FoodCardProps) {
+  const { cart, addToCart } = useCart();
+
+  const existingItem = cart.find(
+    (food) => food._id === item._id
+  );
+
   return (
     <div className="overflow-hidden rounded-xl bg-white shadow-md">
       <img
-        src={image}
-        alt={name}
+        src={item.image}
+        alt={item.name}
         className="h-48 w-full object-cover"
       />
 
       <div className="p-5">
-        <p className="text-sm text-gray-500">{category}</p>
-
-        <h3 className="mt-2 text-xl font-semibold text-gray-900">
-          {name}
+        <h3 className="text-xl font-bold text-gray-900">
+          {item.name}
         </h3>
 
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-lg font-bold text-orange-600">
-            ₹{price}
-          </span>
+        <p className="mt-2 text-gray-600">
+          {item.description}
+        </p>
 
-          <button className="rounded-lg bg-orange-500 px-4 py-2 text-white">
-            Add to Cart
-          </button>
-        </div>
+        <p className="mt-3 text-lg font-semibold text-orange-600">
+          ₹{item.price}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => addToCart(item)}
+          disabled={!item.isAvailable}
+          className="mt-4 w-full rounded-lg bg-orange-500 px-4 py-2 text-white hover:bg-orange-600 disabled:bg-gray-400"
+        >
+          {!item.isAvailable
+            ? "Unavailable"
+            : existingItem
+            ? `Add More (${existingItem.quantity} in cart)`
+            : "Add to Cart"}
+        </button>
       </div>
     </div>
   );

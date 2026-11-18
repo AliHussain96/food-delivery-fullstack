@@ -1,38 +1,53 @@
-import Navbar from "@/components/Navbar";
+
+import { Suspense } from "react";
 import HeroSection from "@/components/HeroSection";
 import FoodCard from "@/components/FoodCard";
+import { getAllMenuItems } from "@/services/menuService";
+import type { MenuItem } from "@/types/menu";
 
-const foods = [
-  {
-    id: 1,
-    name: "Margherita Pizza",
-    price: 249,
-    category: "Pizza",
-    image:
-      "https://images.unsplash.com/photo-1574071318508-1cdbab80d002",
-  },
-  {
-    id: 2,
-    name: "Cheese Burger",
-    price: 149,
-    category: "Burger",
-    image:
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd",
-  },
-  {
-    id: 3,
-    name: "Veg Biryani",
-    price: 199,
-    category: "Biryani",
-    image:
-      "https://images.unsplash.com/photo-1563379091339-03246963d96c",
-  },
-];
+// Fetch menu items from MongoDB
+async function PopularDishes() {
+  let foods: MenuItem[] = [];
+  let errorMessage = "";
 
+  try {
+    const menuItems = await getAllMenuItems();
+
+    foods = menuItems.filter((item) => item.isAvailable);
+  } catch (error) {
+    console.error("Failed to load homepage menu:", error);
+    errorMessage = "Unable to load food items. Please try again.";
+  }
+
+  if (errorMessage) {
+    return (
+      <p className="rounded-lg bg-red-50 p-4 text-red-600">
+        {errorMessage}
+      </p>
+    );
+  }
+
+  if (foods.length === 0) {
+    return (
+      <p className="rounded-lg bg-white p-6 text-gray-600">
+        No food items available right now.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      {foods.map((food) => (
+        <FoodCard key={food._id} item={food} />
+      ))}
+    </div>
+  );
+}
+
+// Main homepage
 export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50">
-      <Navbar />
       <HeroSection />
 
       <section className="mx-auto max-w-7xl px-6 py-16">
@@ -40,11 +55,17 @@ export default function Home() {
           Popular Dishes
         </h2>
 
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {foods.map((food) => (
-            <FoodCard key={food.id} {...food} />
-          ))}
-        </div>
+        <Suspense
+          fallback={
+            <div className="py-12 text-center">
+              <p className="text-lg text-gray-600">
+                Loading delicious food...
+              </p>
+            </div>
+          }
+        >
+          <PopularDishes />
+        </Suspense>
       </section>
     </main>
   );

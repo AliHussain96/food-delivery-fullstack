@@ -1,5 +1,5 @@
-
 import Link from "next/link";
+import AuthNav from "./AuthNav";
 
 export default function Navbar() {
   return (
@@ -13,11 +13,25 @@ export default function Navbar() {
         <Link href="/restaurants">Restaurants</Link>
         <Link href="/cart">Cart</Link>
         <Link
+          href="/orders"
+          className="font-medium text-gray-700 hover:text-orange-500"
+        >
+          Orders
+        </Link>
+        {/* <Link
           href="/login"
-          className="rounded-lg bg-orange-500 px-4 py-2 text-white"
+          className="font-medium text-gray-700 hover:text-orange-500"
         >
           Login
         </Link>
+
+        <Link
+          href="/register"
+          className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white hover:bg-orange-600"
+        >
+          Register
+        </Link> */}
+        <AuthNav />
       </div>
     </nav>
   );

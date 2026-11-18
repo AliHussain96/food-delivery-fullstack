@@ -1,17 +1,30 @@
-
+import menuRoutes from "./routes/menuRoutes";
 import express from "express";
 import cors from "cors";
 import restaurantRoutes from "./routes/restaurantRoutes";
+import orderRoutes from "./routes/orderRoutes";
+import cookieParser from "cookie-parser";
+import authRoutes from "./routes/authRoutes";
 
 const app = express();
 
+// app.use(
+//   cors({
+//     origin: process.env.FRONTEND_URL || "http://localhost:3000",
+//   })
+// );
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: "http://localhost:3000",
+    credentials: true,
   })
 );
 
 app.use(express.json());
+app.use(cookieParser());
+
+// app.use("/api/auth", authRoutes);
 
 // Home route
 app.get("/", (req, res) => {
@@ -29,7 +42,12 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Restaurant routes
+// API routes
 app.use("/api/restaurants", restaurantRoutes);
+app.use("/api/menu", menuRoutes);
+// Restaurant-specific menu endpoints
+app.use("/api", menuRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/auth", authRoutes);
 
 export default app;
