@@ -162,3 +162,63 @@ export async function getOrders(
     });
   }
 }
+
+
+/**
+ * GET /api/orders/:id
+ * Fetch an individual order belonging to the logged-in user.
+ */
+export async function getOrderById(
+  req: AuthRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Please login to view your order",
+      });
+      return;
+    }
+
+    if (
+      typeof id !== "string" ||
+      !mongoose.isValidObjectId(id)
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid order ID",
+      });
+      return;
+    }
+
+    const order = await Order.findOne({
+      _id: id,
+      userId,
+    });
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: order,
+    });
+  } catch (error) {
+    console.error("Get order by ID error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch order details",
+    });
+  }
+}
+

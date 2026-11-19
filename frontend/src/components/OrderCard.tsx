@@ -1,5 +1,5 @@
-
 import type { Order, OrderStatus } from "@/types/order";
+import Link from "next/link";
 
 interface OrderCardProps {
   order: Order;
@@ -14,14 +14,11 @@ const statusColors: Record<OrderStatus, string> = {
 };
 
 export default function OrderCard({ order }: OrderCardProps) {
-  const formattedDate = new Date(order.createdAt).toLocaleDateString(
-    "en-IN",
-    {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }
-  );
+  const formattedDate = new Date(order.createdAt).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 
   return (
     <article className="rounded-xl bg-white p-6 shadow-md">
@@ -31,9 +28,7 @@ export default function OrderCard({ order }: OrderCardProps) {
             Order #{order._id.slice(-8)}
           </h2>
 
-          <p className="mt-1 text-sm text-gray-500">
-            {formattedDate}
-          </p>
+          <p className="mt-1 text-sm text-gray-500">{formattedDate}</p>
         </div>
 
         <span
@@ -55,21 +50,26 @@ export default function OrderCard({ order }: OrderCardProps) {
               {item.name} × {item.quantity}
             </span>
 
-            <span>
-              ₹{item.price * item.quantity}
-            </span>
+            <span>₹{item.price * item.quantity}</span>
           </div>
         ))}
       </div>
 
       <div className="mt-5 flex justify-between border-t border-gray-100 pt-4">
-        <span className="font-semibold text-gray-900">
-          Total Amount
-        </span>
+        <span className="font-semibold text-gray-900">Total Amount</span>
 
         <span className="text-xl font-bold text-orange-600">
           ₹{order.totalAmount}
         </span>
+      </div>
+
+      <div className="mt-6">
+        <Link
+          href={`/orders/${order._id}`}
+          className="inline-block rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
+        >
+          View Details →
+        </Link>
       </div>
     </article>
   );

@@ -4,6 +4,7 @@ import { Router } from "express";
 import {
   createOrder,
   getOrders,
+  getOrderById,
 } from "../controllers/orderController";
 
 import { protect } from "../middleware/authMiddleware";
@@ -11,13 +12,18 @@ import { requireTrustedOrigin } from "../middleware/requireTrustedOrigin";
 
 const router = Router();
 
-// Only authenticated customers can place orders
-router.post("/", protect, createOrder);
+// Place an order
+router.post(
+  "/",
+  protect,
+  requireTrustedOrigin,
+  createOrder
+);
 
-// Only authenticated customers can view their orders
+// Get authenticated user's orders
 router.get("/", protect, getOrders);
 
-router.post("/", requireTrustedOrigin, protect, createOrder);
-router.get("/", protect, getOrders);
+// Get a specific order owned by the authenticated user
+router.get("/:id", protect, getOrderById);
 
 export default router;

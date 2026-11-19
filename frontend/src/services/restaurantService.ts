@@ -1,7 +1,10 @@
 
 import type { Restaurant } from "@/types/restaurant";
 
-const API_URL = process.env.API_URL || "http://localhost:5000";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.API_URL ||
+  "http://localhost:5000";
 
 interface RestaurantListResponse {
   success: boolean;
@@ -26,6 +29,10 @@ export async function getRestaurants(): Promise<Restaurant[]> {
 
   const result: RestaurantListResponse = await response.json();
 
+  if (!result.success || !Array.isArray(result.data)) {
+    throw new Error("Invalid restaurant API response");
+  }
+
   return result.data;
 }
 
@@ -33,9 +40,12 @@ export async function getRestaurants(): Promise<Restaurant[]> {
 export async function getRestaurantById(
   id: string
 ): Promise<Restaurant | null> {
-  const response = await fetch(`${API_URL}/api/restaurants/${id}`, {
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `${API_URL}/api/restaurants/${encodeURIComponent(id)}`,
+    {
+      cache: "no-store",
+    }
+  );
 
   if (response.status === 404 || response.status === 400) {
     return null;
@@ -46,6 +56,10 @@ export async function getRestaurantById(
   }
 
   const result: RestaurantDetailsResponse = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error("Invalid restaurant API response");
+  }
 
   return result.data;
 }

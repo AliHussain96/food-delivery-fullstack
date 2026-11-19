@@ -9,10 +9,13 @@ import {
   deleteMenuItem,
 } from "../controllers/menuController";
 
+import { protect } from "../middleware/authMiddleware";
+import { requireAdmin } from "../middleware/adminMiddleware";
+import { requireTrustedOrigin } from "../middleware/requireTrustedOrigin";
+
 const router = Router();
 
-// GET /api/menu
-// Fetch all menu items
+// PUBLIC ROUTES
 router.get("/", async (_req, res) => {
   try {
     const items = await MenuItem.find();
@@ -32,22 +35,34 @@ router.get("/", async (_req, res) => {
   }
 });
 
-// GET /api/menu/restaurants/:restaurantId/menu
 router.get(
   "/restaurants/:restaurantId/menu",
   getRestaurantMenu
 );
 
-// POST /api/menu/restaurants/:restaurantId/menu
+// ADMIN-ONLY ROUTES
 router.post(
   "/restaurants/:restaurantId/menu",
+  protect,
+  requireAdmin,
+  requireTrustedOrigin,
   createMenuItem
 );
 
-// PATCH /api/menu/menu/:id
-router.patch("/menu/:id", updateMenuItem);
+router.patch(
+  "/menu/:id",
+  protect,
+  requireAdmin,
+  requireTrustedOrigin,
+  updateMenuItem
+);
 
-// DELETE /api/menu/menu/:id
-router.delete("/menu/:id", deleteMenuItem);
+router.delete(
+  "/menu/:id",
+  protect,
+  requireAdmin,
+  requireTrustedOrigin,
+  deleteMenuItem
+);
 
 export default router;

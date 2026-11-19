@@ -58,3 +58,23 @@ export async function getAllOrders(): Promise<Order[]> {
 
   return parseResponse<Order[]>(response);
 }
+
+
+
+/**
+ * Fetch a single order by ID.
+ */
+export async function getOrderById(
+  orderId: string
+): Promise<Order> {
+  const response = await fetch(
+    `${API_URL}/api/orders/${encodeURIComponent(orderId)}`,
+    {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    }
+  );
+
+  return parseResponse<Order>(response);
+}

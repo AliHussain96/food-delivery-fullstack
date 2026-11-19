@@ -5,6 +5,7 @@ import restaurantRoutes from "./routes/restaurantRoutes";
 import orderRoutes from "./routes/orderRoutes";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/authRoutes";
+import adminRoutes from "./routes/adminRoutes";
 
 const app = express();
 
@@ -49,5 +50,6 @@ app.use("/api/menu", menuRoutes);
 app.use("/api", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
 export default app;

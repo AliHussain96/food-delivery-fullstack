@@ -1,5 +1,9 @@
 
-import { Request, Response, NextFunction } from "express";
+import {
+  Request,
+  Response,
+  NextFunction,
+} from "express";
 
 export function requireTrustedOrigin(
   req: Request,
@@ -11,11 +15,11 @@ export function requireTrustedOrigin(
 
   const origin = req.get("origin");
 
-  // Require a matching Origin header for browser mutations.
-  if (origin !== allowedOrigin) {
+  // Require a trusted browser request origin
+  if (!origin || origin !== allowedOrigin) {
     res.status(403).json({
       success: false,
-      message: "Untrusted request origin",
+      message: "Request origin is not allowed",
     });
     return;
   }
