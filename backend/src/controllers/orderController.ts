@@ -222,3 +222,85 @@ export async function getOrderById(
   }
 }
 
+export const cancelOrder = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.userId;
+    const orderId = req.params.id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required.",
+      });
+      return;
+    }
+
+    if (
+      typeof orderId !== "string" ||
+      !mongoose.isValidObjectId(orderId)
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid order ID.",
+      });
+      return;
+    }
+
+    // Atomic update prevents cancellation after
+    // another request has advanced the order status.
+    const cancelledOrder = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        userId,
+        status: { $in: ["pending", "confirmed"] },
+      },
+      {
+        $set: { status: "cancelled" },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (cancelledOrder) {
+      res.status(200).json({
+        success: true,
+        message: "Order cancelled successfully.",
+        data: cancelledOrder,
+      });
+      return;
+    }
+
+    // Check ownership without exposing another
+    // customer's order details.
+    const existingOrder = await Order.findOne({
+      _id: orderId,
+      userId,
+    }).select("_id status");
+
+    if (!existingOrder) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found.",
+      });
+      return;
+    }
+
+    res.status(409).json({
+      success: false,
+      message:
+        "This order can no longer be cancelled.",
+    });
+  } catch (error) {
+    console.error("Cancel order error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to cancel order.",
+    });
+  }
+};

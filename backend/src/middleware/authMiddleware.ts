@@ -72,3 +72,47 @@ export async function protect(
     });
   }
 }
+
+
+export async function adminOnly(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId) {
+      res.status(401).json({
+        success: false,
+        message: "Please login first",
+      });
+      return;
+    }
+
+    const user = await User.findById(req.userId);
+
+    if (!user) {
+      res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    if (user.role !== "admin") {
+      res.status(403).json({
+        success: false,
+        message: "Access denied. Admin only.",
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    console.error("Admin authorization error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to verify admin access",
+    });
+  }
+}

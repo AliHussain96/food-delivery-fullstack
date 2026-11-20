@@ -1,7 +1,7 @@
 "use client";
 
-// import { useCallback, useEffect, useState } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -9,28 +9,44 @@ import { useAuth } from "@/context/AuthContext";
 
 import AdminStats from "@/components/admin/AdminStats";
 import AdminOrderTable from "@/components/admin/AdminOrderTable";
+import AdminOrderFilters, {
+  type AdminOrderSort,
+} from "@/components/admin/AdminOrderFilters";
+
+import DashboardStats from "@/components/admin/DashboardStats";
+import DailyOrdersChart from "@/components/admin/DailyOrdersChart";
+
+import RevenueChart from "@/components/admin/RevenueChart";
+import OrderStatusChart from "@/components/admin/OrderStatusChart";
 
 import {
   getAdminOrders,
   updateAdminOrderStatus,
 } from "@/services/adminService";
 
+import { getDashboardAnalytics } from "@/services/analyticsService";
+
 import type { AdminOrder, OrderStatus } from "@/types/admin";
 
-import AdminOrderFilters, {
-  type AdminOrderSort,
-} from "@/components/admin/AdminOrderFilters";
+import type { DashboardAnalytics } from "@/types/analytics";
 
 export default function AdminDashboardPage() {
   const router = useRouter();
 
   const { user, authLoading } = useAuth();
 
+  // Existing order states
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // Analytics states
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
+
+  const [analyticsError, setAnalyticsError] = useState("");
+
+  // Existing filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState<AdminOrderSort>("newest");
@@ -39,6 +55,7 @@ export default function AdminDashboardPage() {
 
   const isAdmin = user?.role === "admin";
 
+  // Filter and sort orders
   const filteredOrders = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -77,21 +94,45 @@ export default function AdminDashboardPage() {
     return result;
   }, [orders, search, statusFilter, sortBy]);
 
-  const loadOrders = useCallback(async () => {
+  // Fetch orders and analytics
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError("");
+    setAnalyticsError("");
 
     try {
-      const data = await getAdminOrders();
-      setOrders(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load orders");
+      const [ordersResult, analyticsResult] = await Promise.allSettled([
+        getAdminOrders(),
+        getDashboardAnalytics(),
+      ]);
+
+      if (ordersResult.status === "fulfilled") {
+        setOrders(ordersResult.value);
+      } else {
+        setError(
+          ordersResult.reason instanceof Error
+            ? ordersResult.reason.message
+            : "Failed to load orders",
+        );
+      }
+
+      if (analyticsResult.status === "fulfilled") {
+        setAnalytics(analyticsResult.value);
+      } else {
+        setAnalytics(null);
+
+        setAnalyticsError(
+          analyticsResult.reason instanceof Error
+            ? analyticsResult.reason.message
+            : "Failed to load analytics",
+        );
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Check authentication and load admin orders
+  // Authentication and dashboard initialization
   useEffect(() => {
     if (authLoading) return;
 
@@ -105,9 +146,10 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    void loadOrders();
-  }, [authLoading, user, router, loadOrders]);
+    void loadDashboard();
+  }, [authLoading, user, router, loadDashboard]);
 
+  // Update order status
   async function handleStatusChange(orderId: string, status: OrderStatus) {
     if (!isAdmin || updatingOrderId !== null) {
       return;
@@ -118,10 +160,8 @@ export default function AdminDashboardPage() {
     setSuccess("");
 
     try {
-      // Save status in MongoDB through Express API
       const updatedOrder = await updateAdminOrderStatus(orderId, status);
 
-      // Update local state after successful API response
       setOrders((previousOrders) =>
         previousOrders.map((order) =>
           order._id === orderId ? updatedOrder : order,
@@ -129,6 +169,18 @@ export default function AdminDashboardPage() {
       );
 
       setSuccess(`Order #${orderId.slice(-8)} updated to ${status}.`);
+
+      // Refresh analytics after the status changes.
+      try {
+        const updatedAnalytics = await getDashboardAnalytics();
+
+        setAnalytics(updatedAnalytics);
+        setAnalyticsError("");
+      } catch (err) {
+        setAnalyticsError(
+          err instanceof Error ? err.message : "Failed to refresh analytics",
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update order");
     } finally {
@@ -136,7 +188,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Wait for authentication to finish
+  // Authentication loading
   if (authLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -145,7 +197,7 @@ export default function AdminDashboardPage() {
     );
   }
 
-  // Never display admin data to non-admin users
+  // Restrict admin interface
   if (!isAdmin) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -167,34 +219,39 @@ export default function AdminDashboardPage() {
             <h1 className="text-3xl font-bold text-gray-900">
               Admin Dashboard
             </h1>
+
+            {/* Admin navigation */}
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 href="/admin/restaurants"
-                className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white"
+                className="rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white hover:bg-orange-600"
               >
                 Manage Restaurants
               </Link>
 
               <Link
                 href="/admin/menu"
-                className="rounded-lg bg-gray-800 px-4 py-2 font-semibold text-white"
+                className="rounded-lg bg-gray-800 px-4 py-2 font-semibold text-white hover:bg-gray-900"
               >
                 Manage Menu
               </Link>
             </div>
 
-            <p className="mt-2 text-gray-600">
-              Welcome, {user.name}. Manage your restaurant orders here.
+            <p className="mt-3 text-gray-600">
+              Welcome, {user.name}. Manage your restaurant orders and view
+              business analytics.
             </p>
           </div>
 
+          {/* Dashboard actions */}
           <div className="flex gap-3">
             <button
-              onClick={() => void loadOrders()}
+              type="button"
+              onClick={() => void loadDashboard()}
               disabled={loading || updatingOrderId !== null}
               className="rounded-lg bg-orange-500 px-5 py-2 font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
             >
-              {loading ? "Refreshing..." : "Refresh Orders"}
+              {loading ? "Refreshing..." : "Refresh Dashboard"}
             </button>
 
             <Link
@@ -216,6 +273,16 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* Analytics error */}
+        {analyticsError && (
+          <div
+            role="alert"
+            className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800"
+          >
+            Analytics: {analyticsError}
+          </div>
+        )}
+
         {/* Success notification */}
         {success && (
           <div
@@ -226,7 +293,6 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* Dashboard content */}
         {loading ? (
           <div className="rounded-xl bg-white p-12 text-center shadow-sm">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-orange-500 border-t-transparent" />
@@ -235,31 +301,103 @@ export default function AdminDashboardPage() {
           </div>
         ) : (
           <>
-            <AdminStats orders={orders} />
+            {/* New analytics section */}
+            {analytics && (
+              <section className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    Business Analytics
+                  </h2>
 
-            <AdminOrderFilters
-              search={search}
-              status={statusFilter}
-              sortBy={sortBy}
-              onSearchChange={setSearch}
-              onStatusChange={setStatusFilter}
-              onSortChange={setSortBy}
-              onClear={() => {
-                setSearch("");
-                setStatusFilter("all");
-                setSortBy("newest");
-              }}
-            />
+                  <p className="mt-1 text-sm text-gray-500">
+                    Statistics calculated from MongoDB orders.
+                  </p>
+                </div>
 
-            <p className="text-sm text-gray-600">
-              Showing {filteredOrders.length} of {orders.length} orders
-            </p>
+                <DashboardStats analytics={analytics} />
 
-            <AdminOrderTable
-              orders={filteredOrders}
-              updatingOrderId={updatingOrderId}
-              onStatusChange={handleStatusChange}
-            />
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <DailyOrdersChart data={analytics.dailyOrders} />
+
+                  <RevenueChart data={analytics.dailyRevenue} />
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <OrderStatusChart analytics={analytics} />
+
+                  <section className="rounded-xl bg-white p-6 shadow-sm">
+                    <h2 className="text-xl font-bold text-gray-900">
+                      Delivery Performance
+                    </h2>
+
+                    <div className="mt-6 space-y-6">
+                      <div>
+                        <p className="text-sm text-gray-500">Delivery Rate</p>
+
+                        <p className="mt-2 text-3xl font-bold text-green-600">
+                          {analytics.deliveryRate}%
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-500">
+                          Average Delivered Order Value
+                        </p>
+
+                        <p className="mt-2 text-3xl font-bold text-orange-600">
+                          ₹{analytics.averageOrderValue.toLocaleString("en-IN")}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-500">
+                          Cancelled Orders
+                        </p>
+
+                        <p className="mt-2 text-3xl font-bold text-red-600">
+                          {analytics.cancelledOrders}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </section>
+            )}
+
+            {/* Existing admin order statistics */}
+            <section className="space-y-5">
+              <h2 className="text-2xl font-bold text-gray-900">
+                Order Management
+              </h2>
+
+              <AdminStats orders={orders} />
+
+              {/* Existing search/filter controls */}
+              <AdminOrderFilters
+                search={search}
+                status={statusFilter}
+                sortBy={sortBy}
+                onSearchChange={setSearch}
+                onStatusChange={setStatusFilter}
+                onSortChange={setSortBy}
+                onClear={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setSortBy("newest");
+                }}
+              />
+
+              <p className="text-sm text-gray-600">
+                Showing {filteredOrders.length} of {orders.length} orders
+              </p>
+
+              {/* Existing order table */}
+              <AdminOrderTable
+                orders={filteredOrders}
+                updatingOrderId={updatingOrderId}
+                onStatusChange={handleStatusChange}
+              />
+            </section>
           </>
         )}
       </div>

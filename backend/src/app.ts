@@ -6,6 +6,11 @@ import orderRoutes from "./routes/orderRoutes";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/authRoutes";
 import adminRoutes from "./routes/adminRoutes";
+import profileRoutes from "./routes/profileRoutes";
+import addressRoutes from "./routes/addressRoutes";
+import analyticsRoutes from "./routes/analyticsRoutes";
+import reviewRoutes from "./routes/reviewRoutes";
+import favoriteRoutes from "./routes/favoriteRoutes";
 
 const app = express();
 
@@ -51,5 +56,15 @@ app.use("/api", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+
+// Customer profile and saved addresses
+app.use("/api/profile", profileRoutes);
+app.use("/api/addresses", addressRoutes);
+
+app.use("/api/analytics", analyticsRoutes);
+
+app.use("/api/reviews", reviewRoutes);
+
+app.use("/api/favorites", favoriteRoutes);
 
 export default app;

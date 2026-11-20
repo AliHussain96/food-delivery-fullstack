@@ -9,6 +9,7 @@ import {
 
 import { protect } from "../middleware/authMiddleware";
 import { requireTrustedOrigin } from "../middleware/requireTrustedOrigin";
+import { cancelOrder } from "../controllers/orderController";
 
 const router = Router();
 
@@ -18,6 +19,13 @@ router.post(
   protect,
   requireTrustedOrigin,
   createOrder
+);
+
+router.patch(
+  "/:id/cancel",
+  protect,
+  requireTrustedOrigin,
+  cancelOrder
 );
 
 // Get authenticated user's orders

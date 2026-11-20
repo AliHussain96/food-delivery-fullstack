@@ -1,4 +1,3 @@
-
 import mongoose, { Schema, Document } from "mongoose";
 
 // TypeScript interface
@@ -9,6 +8,8 @@ export interface IRestaurant extends Document {
   deliveryTime: string;
   image: string;
   description: string;
+  // rating: number;
+  totalReviews: number;
 }
 
 // Mongoose schema
@@ -33,6 +34,12 @@ const restaurantSchema = new Schema<IRestaurant>(
       max: 5,
     },
 
+    totalReviews: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     deliveryTime: {
       type: String,
       required: true,
@@ -50,13 +57,10 @@ const restaurantSchema = new Schema<IRestaurant>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Create model
-const Restaurant = mongoose.model<IRestaurant>(
-  "Restaurant",
-  restaurantSchema
-);
+const Restaurant = mongoose.model<IRestaurant>("Restaurant", restaurantSchema);
 
 export default Restaurant;

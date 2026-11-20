@@ -1,39 +1,66 @@
 
 import Link from "next/link";
 import type { Restaurant } from "@/types/restaurant";
+import FavoriteButton from "@/components/FavoriteButton";
 
 interface RestaurantCardProps {
   restaurant: Restaurant;
+  onFavoriteRemoved?: (restaurantId: string) => void;
 }
 
 export default function RestaurantCard({
   restaurant,
+  onFavoriteRemoved,
 }: RestaurantCardProps) {
   return (
-    <Link
-      href={`/restaurants/${restaurant._id}`}
-      className="group block overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl"
-    >
+    <article className="group relative overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl">
+      {/* Restaurant image */}
       <div className="relative h-56 overflow-hidden bg-orange-50">
-        <img
-          src={restaurant.image}
-          alt={restaurant.name}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-        />
+        <Link
+          href={`/restaurants/${restaurant._id}`}
+          className="block h-full w-full"
+          aria-label={`View ${restaurant.name}`}
+        >
+          <img
+            src={restaurant.image}
+            alt={restaurant.name}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+          />
+        </Link>
 
-        <div className="absolute left-4 top-4 rounded-full bg-green-600 px-3 py-1.5 text-sm font-bold text-white shadow">
-          ★ {restaurant.rating}
+        {/* Rating */}
+        <div className="absolute left-4 top-4 rounded-full bg-white/95 px-3 py-1.5 text-sm shadow">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-green-700">
+              ⭐ {restaurant.rating ?? 0}
+            </span>
+
+            <span className="text-xs font-medium text-gray-600">
+              ({restaurant.totalReviews ?? 0} reviews)
+            </span>
+          </div>
         </div>
 
-        <div className="absolute bottom-4 right-4 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-orange-600 shadow">
+        {/* Favorite button */}
+        <div className="absolute right-4 top-4 z-10">
+          <FavoriteButton
+            restaurantId={restaurant._id}
+            onRemoved={onFavoriteRemoved}
+          />
+        </div>
+
+        <div className="pointer-events-none absolute bottom-4 right-4 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-orange-600 shadow">
           Explore Menu
         </div>
       </div>
 
+      {/* Restaurant details */}
       <div className="p-6">
-        <h2 className="text-2xl font-bold text-gray-900 transition-colors group-hover:text-orange-600">
-          {restaurant.name}
-        </h2>
+        <Link href={`/restaurants/${restaurant._id}`}>
+          <h2 className="text-2xl font-bold text-gray-900 transition-colors group-hover:text-orange-600">
+            {restaurant.name}
+          </h2>
+        </Link>
 
         <p className="mt-1 text-sm font-medium text-orange-600">
           {restaurant.cuisine}
@@ -50,11 +77,15 @@ export default function RestaurantCard({
             {restaurant.deliveryTime}
           </span>
 
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-xl text-white transition-all group-hover:translate-x-1 group-hover:bg-orange-600">
+          <Link
+            href={`/restaurants/${restaurant._id}`}
+            aria-label={`Explore ${restaurant.name} menu`}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-xl text-white transition-all group-hover:translate-x-1 group-hover:bg-orange-600"
+          >
             →
-          </span>
+          </Link>
         </div>
       </div>
-    </Link>
+    </article>
   );
 }

@@ -8,31 +8,73 @@ import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { placeOrder } from "@/services/orderService";
 import { getCurrentUser } from "@/services/authService";
+import { getAddresses } from "@/services/addressService";
+
+import type { SavedAddress } from "@/types/address";
+
+import SavedAddressSelector from "@/components/checkout/SavedAddressSelector";
+
+// Convert a saved address into the format expected by the order API.
+function formatDeliveryAddress(item: SavedAddress): string {
+  return [
+    item.addressLine,
+    item.city,
+    item.state,
+    item.pincode,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
 
-  // Cart context
-  const { cart, totalItems, totalPrice, clearCart, loaded } = useCart();
+  // Existing cart functionality
+  const {
+    cart,
+    totalItems,
+    totalPrice,
+    clearCart,
+    loaded,
+  } = useCart();
 
-  // Customer details
+  // Manual delivery details
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
 
-  // Order states
+  // Order submission
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Authentication states
+  // Authentication
   const [authChecking, setAuthChecking] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] =
+    useState(false);
 
-  // Check whether the customer is logged in
+  // Saved addresses
+  const [savedAddresses, setSavedAddresses] = useState<
+    SavedAddress[]
+  >([]);
+
+  const [addressMode, setAddressMode] = useState<
+    "saved" | "manual"
+  >("manual");
+
+  const [selectedAddressId, setSelectedAddressId] =
+    useState("");
+
+  const [addressesLoading, setAddressesLoading] =
+    useState(true);
+
+  const [addressesError, setAddressesError] =
+    useState("");
+
+  // Check authentication and load addresses.
   useEffect(() => {
     let active = true;
 
-    async function checkAuthentication() {
+    async function initializeCheckout() {
       try {
         const user = await getCurrentUser();
 
@@ -44,92 +86,168 @@ export default function CheckoutPage() {
         }
 
         setIsAuthenticated(true);
-      } catch (err) {
-        console.error("Authentication check failed:", err);
+        setCustomerName(user.name ?? "");
 
-        if (active) {
-          setError(
-            "Unable to verify your login. Please try again."
+        try {
+          const data = await getAddresses();
+
+          if (!active) return;
+
+          setSavedAddresses(data);
+
+          if (data.length > 0) {
+            const defaultAddress =
+              data.find((item) => item.isDefault) ??
+              data[0];
+
+            setSelectedAddressId(defaultAddress._id);
+            setAddressMode("saved");
+          }
+        } catch (addressError) {
+          if (!active) return;
+
+          setAddressesError(
+            addressError instanceof Error
+              ? addressError.message
+              : "Unable to load saved addresses."
           );
+
+          // Manual checkout remains available.
+          setAddressMode("manual");
         }
+      } catch (authError) {
+        if (!active) return;
+
+        console.error(
+          "Authentication check failed:",
+          authError
+        );
+
+        setError(
+          "Unable to verify your login. Please try again."
+        );
       } finally {
         if (active) {
           setAuthChecking(false);
+          setAddressesLoading(false);
         }
       }
     }
 
-    checkAuthentication();
+    void initializeCheckout();
 
     return () => {
       active = false;
     };
   }, [router]);
 
-  // Handle order submission
+  // Submit order
   const handlePlaceOrder = async (
     event: FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
 
-    // Prevent unauthenticated checkout
+    if (loading) return;
+
+    setError("");
+
     if (!isAuthenticated) {
-      setError("Please login before placing an order.");
+      setError(
+        "Please login before placing an order."
+      );
       return;
     }
 
-    // Validate cart
-    if (cart.length === 0) {
+    if (!loaded || cart.length === 0) {
       setError("Your cart is empty.");
       return;
     }
 
-    // Validate customer details
-    if (
-      !customerName.trim() ||
-      !/^[0-9]{10}$/.test(phone) ||
-      !address.trim()
-    ) {
+    if (addressesLoading) {
       setError(
-        "Please enter a valid name, 10-digit phone number and address."
+        "Please wait while delivery addresses load."
+      );
+      return;
+    }
+
+    // Start with manually entered delivery details.
+    let finalCustomerName = customerName.trim();
+    let finalPhone = phone.trim();
+    let finalAddress = address.trim();
+
+    // Override details if a saved address is selected.
+    if (addressMode === "saved") {
+      const selected = savedAddresses.find(
+        (item) => item._id === selectedAddressId
+      );
+
+      if (!selected) {
+        setError(
+          "Please select a valid saved delivery address."
+        );
+        return;
+      }
+
+      finalCustomerName = selected.fullName.trim();
+      finalPhone = selected.phone.trim();
+      finalAddress = formatDeliveryAddress(selected);
+    }
+
+    // Validate the final details, regardless of address mode.
+    if (!finalCustomerName) {
+      setError("Please enter your full name.");
+      return;
+    }
+
+    if (!/^[0-9]{10}$/.test(finalPhone)) {
+      setError(
+        "Please enter a valid 10-digit mobile number."
+      );
+      return;
+    }
+
+    if (!finalAddress) {
+      setError(
+        "Please enter a valid delivery address."
       );
       return;
     }
 
     setLoading(true);
-    setError("");
 
     try {
-      // Create order in MongoDB
+      // Existing order API — no backend changes required.
       const order = await placeOrder({
-        customerName: customerName.trim(),
-        phone,
-        address: address.trim(),
+        customerName: finalCustomerName,
+        phone: finalPhone,
+        address: finalAddress,
         items: cart.map((item) => ({
           menuItemId: item._id,
           quantity: item.quantity,
         })),
       });
 
-      // Clear cart after successful order
+      // Clear cart only after a successful order.
       clearCart();
 
-      // Redirect to success page
+      // Redirect to the existing success page.
       router.push(
-        `/order-success?orderId=${encodeURIComponent(order._id)}`
+        `/order-success?orderId=${encodeURIComponent(
+          order._id
+        )}`
       );
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to place order"
+          : "Unable to place order. Please try again."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // Wait until authentication and cart data are loaded
+  // Wait until authentication and cart data have loaded.
   if (authChecking || !loaded) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -137,14 +255,14 @@ export default function CheckoutPage() {
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-orange-500 border-t-transparent" />
 
           <p className="text-lg font-medium text-gray-700">
-            Checking authentication...
+            Preparing your checkout...
           </p>
         </div>
       </main>
     );
   }
 
-  // Display login message if customer is not authenticated
+  // Authentication required
   if (!isAuthenticated) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 px-6">
@@ -159,7 +277,10 @@ export default function CheckoutPage() {
           </p>
 
           {error && (
-            <p className="mt-4 text-sm text-red-600">
+            <p
+              role="alert"
+              className="mt-4 text-sm text-red-600"
+            >
               {error}
             </p>
           )}
@@ -190,7 +311,7 @@ export default function CheckoutPage() {
 
           <Link
             href="/restaurants"
-            className="mt-6 inline-block rounded-lg bg-orange-500 px-6 py-3 text-white hover:bg-orange-600"
+            className="mt-6 inline-block rounded-lg bg-orange-500 px-6 py-3 font-semibold text-white hover:bg-orange-600"
           >
             Explore Restaurants
           </Link>
@@ -199,7 +320,6 @@ export default function CheckoutPage() {
     );
   }
 
-  // Checkout page
   return (
     <main className="min-h-screen bg-gray-50 px-6 py-12">
       <div className="mx-auto max-w-6xl">
@@ -208,7 +328,7 @@ export default function CheckoutPage() {
         </h1>
 
         <div className="grid gap-8 lg:grid-cols-3">
-          {/* Delivery details */}
+          {/* Delivery details and order form */}
           <form
             onSubmit={handlePlaceOrder}
             className="space-y-6 rounded-xl bg-white p-6 shadow lg:col-span-2"
@@ -217,102 +337,221 @@ export default function CheckoutPage() {
               Delivery Details
             </h2>
 
-            {/* Full Name */}
-            <div>
-              <label
-                htmlFor="customerName"
-                className="mb-2 block font-medium text-gray-700"
-              >
-                Full Name
-              </label>
+            {/* Address selection */}
+            <section className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Choose Delivery Address
+              </h3>
 
-              <input
-                id="customerName"
-                type="text"
-                required
-                value={customerName}
-                onChange={(e) =>
-                  setCustomerName(e.target.value)
-                }
-                className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
-                placeholder="Enter your full name"
-              />
-            </div>
+              {addressesLoading ? (
+                <p className="text-sm text-gray-600">
+                  Loading saved addresses...
+                </p>
+              ) : (
+                <>
+                  {addressesError && (
+                    <p
+                      role="alert"
+                      className="rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800"
+                    >
+                      Saved addresses could not be loaded:{" "}
+                      {addressesError}
+                      <span className="mt-1 block">
+                        You can still enter your delivery
+                        details manually.
+                      </span>
+                    </p>
+                  )}
 
-            {/* Mobile Number */}
-            <div>
-              <label
-                htmlFor="phone"
-                className="mb-2 block font-medium text-gray-700"
-              >
-                Mobile Number
-              </label>
+                  {savedAddresses.length > 0 && (
+                    <div className="flex flex-wrap gap-5">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+                        <input
+                          type="radio"
+                          name="addressMode"
+                          checked={addressMode === "saved"}
+                          disabled={loading}
+                          onChange={() =>
+                            setAddressMode("saved")
+                          }
+                          className="accent-orange-500"
+                        />
+                        Use Saved Address
+                      </label>
 
-              <input
-                id="phone"
-                type="tel"
-                required
-                maxLength={10}
-                pattern="[0-9]{10}"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
-                placeholder="10-digit mobile number"
-              />
-            </div>
+                      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+                        <input
+                          type="radio"
+                          name="addressMode"
+                          checked={addressMode === "manual"}
+                          disabled={loading}
+                          onChange={() =>
+                            setAddressMode("manual")
+                          }
+                          className="accent-orange-500"
+                        />
+                        Enter Manually
+                      </label>
+                    </div>
+                  )}
 
-            {/* Delivery Address */}
-            <div>
-              <label
-                htmlFor="address"
-                className="mb-2 block font-medium text-gray-700"
-              >
-                Delivery Address
-              </label>
+                  {addressMode === "saved" &&
+                    savedAddresses.length > 0 && (
+                      <SavedAddressSelector
+                        addresses={savedAddresses}
+                        selectedId={selectedAddressId}
+                        onSelect={setSelectedAddressId}
+                        disabled={loading}
+                      />
+                    )}
 
-              <textarea
-                id="address"
-                required
-                rows={4}
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
-                placeholder="House number, street, area, city and PIN code"
-              />
-            </div>
+                  {savedAddresses.length === 0 &&
+                    !addressesError && (
+                      <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+                        No saved addresses found. Enter your
+                        delivery details below, or add a
+                        saved address for future orders.
+                      </p>
+                    )}
 
-            {/* Payment Method */}
-            <div>
+                  <Link
+                    href="/profile/addresses"
+                    className="inline-block text-sm font-semibold text-orange-600 hover:underline"
+                  >
+                    Manage Saved Addresses
+                  </Link>
+                </>
+              )}
+            </section>
+
+            {/* Manual delivery details */}
+            {addressMode === "manual" && (
+              <section className="space-y-5 border-t border-gray-100 pt-6">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Enter Delivery Details
+                </h3>
+
+                {/* Full name */}
+                <div>
+                  <label
+                    htmlFor="customerName"
+                    className="mb-2 block font-medium text-gray-700"
+                  >
+                    Full Name
+                  </label>
+
+                  <input
+                    id="customerName"
+                    type="text"
+                    required
+                    maxLength={100}
+                    value={customerName}
+                    onChange={(event) =>
+                      setCustomerName(event.target.value)
+                    }
+                    disabled={loading}
+                    className="w-full rounded-lg border border-gray-300 p-3 text-gray-900 focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                    placeholder="Enter your full name"
+                  />
+                </div>
+
+                {/* Mobile number */}
+                <div>
+                  <label
+                    htmlFor="phone"
+                    className="mb-2 block font-medium text-gray-700"
+                  >
+                    Mobile Number
+                  </label>
+
+                  <input
+                    id="phone"
+                    type="tel"
+                    required
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    value={phone}
+                    onChange={(event) =>
+                      setPhone(event.target.value)
+                    }
+                    disabled={loading}
+                    className="w-full rounded-lg border border-gray-300 p-3 text-gray-900 focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                    placeholder="10-digit mobile number"
+                  />
+                </div>
+
+                {/* Delivery address */}
+                <div>
+                  <label
+                    htmlFor="address"
+                    className="mb-2 block font-medium text-gray-700"
+                  >
+                    Delivery Address
+                  </label>
+
+                  <textarea
+                    id="address"
+                    required
+                    rows={4}
+                    maxLength={500}
+                    value={address}
+                    onChange={(event) =>
+                      setAddress(event.target.value)
+                    }
+                    disabled={loading}
+                    className="w-full rounded-lg border border-gray-300 p-3 text-gray-900 focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                    placeholder="House number, street, area, city, state and PIN code"
+                  />
+                </div>
+              </section>
+            )}
+
+            {/* Payment method */}
+            <section className="border-t border-gray-100 pt-6">
               <h3 className="mb-3 font-semibold text-gray-900">
                 Payment Method
               </h3>
 
-              <div className="rounded-lg border border-orange-300 bg-orange-50 p-4 text-gray-900">
-                Cash on Delivery (COD)
-              </div>
-            </div>
+              <div className="rounded-lg border border-orange-300 bg-orange-50 p-4">
+                <p className="font-semibold text-gray-900">
+                  Cash on Delivery (COD)
+                </p>
 
-            {/* Error Message */}
+                <p className="mt-1 text-sm text-gray-600">
+                  Pay when your order is delivered.
+                </p>
+              </div>
+            </section>
+
+            {/* Order error */}
             {error && (
               <p
                 role="alert"
-                className="rounded-lg bg-red-50 p-3 text-red-600"
+                className="rounded-lg bg-red-50 p-3 text-sm text-red-600"
               >
                 {error}
               </p>
             )}
 
-            {/* Place Order Button */}
+            {/* Place order */}
             <button
               type="submit"
-              disabled={loading || !isAuthenticated}
-              className="w-full rounded-lg bg-orange-500 px-6 py-3 font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={
+                loading ||
+                addressesLoading ||
+                !isAuthenticated
+              }
+              className="w-full rounded-lg bg-orange-500 px-6 py-3 font-semibold text-white transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Placing Order..." : "Place Order"}
+              {loading
+                ? "Placing Order..."
+                : addressesLoading
+                  ? "Loading Addresses..."
+                  : "Place Order"}
             </button>
           </form>
 
-          {/* Order Summary */}
+          {/* Existing order summary */}
           <aside className="h-fit rounded-xl bg-white p-6 shadow">
             <h2 className="mb-5 text-xl font-bold text-gray-900">
               Order Summary
