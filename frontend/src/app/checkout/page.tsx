@@ -9,15 +9,37 @@ import { useCart } from "@/context/CartContext";
 import { placeOrder } from "@/services/orderService";
 import { getCurrentUser } from "@/services/authService";
 import { getAddresses } from "@/services/addressService";
+import { getRestaurants } from "@/services/restaurantService";
+import { checkDeliveryAvailability } from "@/services/deliveryService";
 
 import type { SavedAddress } from "@/types/address";
-
 import SavedAddressSelector from "@/components/checkout/SavedAddressSelector";
 
-// Convert a saved address into the format expected by the order API.
-function formatDeliveryAddress(item: SavedAddress): string {
+// Supports the new area field while the address type
+// is being updated for Step 25.7.
+type DeliverySavedAddress = SavedAddress & {
+  area?: string;
+};
+
+type CheckoutPayload = {
+  customerName: string;
+  phone: string;
+  address: string;
+  addressId?: string;
+  city?: string;
+  area?: string;
+  items: {
+    menuItemId: string;
+    quantity: number;
+  }[];
+};
+
+function formatDeliveryAddress(
+  item: DeliverySavedAddress
+): string {
   return [
     item.addressLine,
+    item.area,
     item.city,
     item.state,
     item.pincode,
@@ -29,7 +51,6 @@ function formatDeliveryAddress(item: SavedAddress): string {
 export default function CheckoutPage() {
   const router = useRouter();
 
-  // Existing cart functionality
   const {
     cart,
     totalItems,
@@ -43,7 +64,18 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
 
-  // Order submission
+  // Step 25.7: Structured delivery location
+  const [deliveryCity, setDeliveryCity] = useState("");
+  const [deliveryArea, setDeliveryArea] = useState("");
+
+  // Available cities and delivery areas from restaurant records.
+  const [restaurantLocations, setRestaurantLocations] = useState<
+    { city?: string; deliveryAreas?: string[] }[]
+  >([]);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+  const [locationsError, setLocationsError] = useState("");
+
+  // Submission
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,7 +86,7 @@ export default function CheckoutPage() {
 
   // Saved addresses
   const [savedAddresses, setSavedAddresses] = useState<
-    SavedAddress[]
+    DeliverySavedAddress[]
   >([]);
 
   const [addressMode, setAddressMode] = useState<
@@ -70,7 +102,15 @@ export default function CheckoutPage() {
   const [addressesError, setAddressesError] =
     useState("");
 
-  // Check authentication and load addresses.
+  const selectedAddress = savedAddresses.find(
+    (item) => item._id === selectedAddressId
+  );
+
+  const savedAddressHasArea =
+    addressMode !== "saved" ||
+    Boolean(selectedAddress?.area?.trim());
+
+  // Initialize authentication and saved addresses.
   useEffect(() => {
     let active = true;
 
@@ -112,7 +152,6 @@ export default function CheckoutPage() {
               : "Unable to load saved addresses."
           );
 
-          // Manual checkout remains available.
           setAddressMode("manual");
         }
       } catch (authError) {
@@ -141,7 +180,122 @@ export default function CheckoutPage() {
     };
   }, [router]);
 
-  // Submit order
+  // Load supported delivery locations independently of saved addresses.
+  useEffect(() => {
+    let active = true;
+
+    async function loadLocations() {
+      try {
+        const restaurants = await getRestaurants();
+        if (!active) return;
+        setRestaurantLocations(restaurants);
+      } catch (err) {
+        if (!active) return;
+        setLocationsError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load delivery locations."
+        );
+      } finally {
+        if (active) setLocationsLoading(false);
+      }
+    }
+
+    void loadLocations();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Normalize labels so differently cased database entries don't duplicate.
+  const cityMap = new Map<string, string>();
+  for (const restaurant of restaurantLocations) {
+    const city = restaurant.city?.trim();
+    if (city) cityMap.set(city.toLowerCase(), cityMap.get(city.toLowerCase()) ?? city);
+  }
+  const cities = [...cityMap.values()].sort((a, b) => a.localeCompare(b));
+
+  const areaMap = new Map<string, string>();
+  for (const restaurant of restaurantLocations) {
+    if (restaurant.city?.trim().toLowerCase() !== deliveryCity.trim().toLowerCase()) continue;
+    for (const rawArea of restaurant.deliveryAreas ?? []) {
+      const area = rawArea.trim();
+      if (area) areaMap.set(area.toLowerCase(), areaMap.get(area.toLowerCase()) ?? area);
+    }
+  }
+  const areas = [...areaMap.values()].sort((a, b) => a.localeCompare(b));
+
+  // Delivery check must use the restaurant actually in the cart.
+  const restaurantIds = Array.from(
+    new Set(cart.map((item) => item.restaurantId).filter((id): id is string => Boolean(id)))
+  );
+  const missingRestaurantId = cart.some((item) => !item.restaurantId);
+  const singleRestaurantId =
+    !missingRestaurantId && restaurantIds.length === 1 ? restaurantIds[0] : "";
+  const cartRestaurantError = missingRestaurantId
+    ? "Some cart items are missing their restaurant ID. Remove and re-add those items from the restaurant page."
+    : restaurantIds.length > 1
+      ? "Please order from one restaurant at a time."
+      : "";
+
+  const locationReady = addressMode === "saved"
+    ? Boolean(selectedAddressId && selectedAddress?.area?.trim())
+    : Boolean(deliveryCity.trim() && deliveryArea.trim());
+
+  // A key prevents a previous location's successful check from authorizing a new location.
+  const deliveryCheckKey = `${singleRestaurantId}|${addressMode}|${
+    addressMode === "saved"
+      ? selectedAddressId
+      : `${deliveryCity.trim().toLowerCase()}|${deliveryArea.trim().toLowerCase()}`
+  }`;
+
+  const [deliveryStatus, setDeliveryStatus] = useState<{
+    key: string;
+    state: "checking" | "available" | "unavailable" | "error";
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || !loaded || !singleRestaurantId || !locationReady) return;
+
+    const controller = new AbortController();
+    const key = deliveryCheckKey;
+    setDeliveryStatus({ key, state: "checking", message: "Checking delivery availability..." });
+
+    const location = addressMode === "saved"
+      ? { addressId: selectedAddressId }
+      : { city: deliveryCity.trim(), area: deliveryArea.trim() };
+
+    void checkDeliveryAvailability(singleRestaurantId, location, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setDeliveryStatus({
+          key,
+          state: result.available ? "available" : "unavailable",
+          message: result.message,
+        });
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setDeliveryStatus({
+          key,
+          state: "error",
+          message: err instanceof Error ? err.message : "Delivery check failed.",
+        });
+      });
+
+    return () => controller.abort();
+  }, [isAuthenticated, loaded, singleRestaurantId, locationReady, deliveryCheckKey,
+      addressMode, selectedAddressId, deliveryCity, deliveryArea]);
+
+  const currentDeliveryStatus =
+    deliveryStatus?.key === deliveryCheckKey ? deliveryStatus : null;
+  const canPlaceOrder =
+    !loading && !addressesLoading && isAuthenticated &&
+    Boolean(singleRestaurantId) && locationReady &&
+    currentDeliveryStatus?.state === "available";
+
+  // Submit order with structured delivery location.
   const handlePlaceOrder = async (
     event: FormEvent<HTMLFormElement>
   ) => {
@@ -151,10 +305,14 @@ export default function CheckoutPage() {
 
     setError("");
 
+    if (!canPlaceOrder) {
+      setError(cartRestaurantError || currentDeliveryStatus?.message ||
+        "Select a delivery location and wait for the availability check.");
+      return;
+    }
+
     if (!isAuthenticated) {
-      setError(
-        "Please login before placing an order."
-      );
+      setError("Please login before placing an order.");
       return;
     }
 
@@ -170,30 +328,43 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Start with manually entered delivery details.
     let finalCustomerName = customerName.trim();
     let finalPhone = phone.trim();
     let finalAddress = address.trim();
 
-    // Override details if a saved address is selected.
-    if (addressMode === "saved") {
-      const selected = savedAddresses.find(
-        (item) => item._id === selectedAddressId
-      );
+    let finalCity = deliveryCity.trim();
+    let finalArea = deliveryArea.trim();
 
-      if (!selected) {
+    // Saved-address checkout
+    if (addressMode === "saved") {
+      if (!selectedAddress) {
         setError(
           "Please select a valid saved delivery address."
         );
         return;
       }
 
-      finalCustomerName = selected.fullName.trim();
-      finalPhone = selected.phone.trim();
-      finalAddress = formatDeliveryAddress(selected);
+      if (!selectedAddress.area?.trim()) {
+        setError(
+          "Your saved address is missing a delivery area. " +
+          "Please update it or enter your address manually."
+        );
+        return;
+      }
+
+      finalCustomerName =
+        selectedAddress.fullName.trim();
+
+      finalPhone = selectedAddress.phone.trim();
+
+      finalAddress =
+        formatDeliveryAddress(selectedAddress);
+
+      finalCity = selectedAddress.city.trim();
+      finalArea = selectedAddress.area.trim();
     }
 
-    // Validate the final details, regardless of address mode.
+    // Common validation
     if (!finalCustomerName) {
       setError("Please enter your full name.");
       return;
@@ -213,24 +384,61 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (!finalCity) {
+      setError("Please enter your delivery city.");
+      return;
+    }
+
+    if (!finalArea) {
+      setError("Please enter your delivery area.");
+      return;
+    }
+
+    // Check that quantities are valid.
+    const invalidCartItem = cart.some(
+      (item) =>
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0 ||
+        item.quantity > 100
+    );
+
+    if (invalidCartItem) {
+      setError(
+        "Please check your cart item quantities."
+      );
+      return;
+    }
+
+    const payload: CheckoutPayload = {
+      customerName: finalCustomerName,
+      phone: finalPhone,
+      address: finalAddress,
+
+      ...(addressMode === "saved"
+        ? {
+            addressId: selectedAddressId,
+          }
+        : {
+            city: finalCity,
+            area: finalArea,
+          }),
+
+      items: cart.map((item) => ({
+        menuItemId: item._id,
+        quantity: item.quantity,
+      })),
+    };
+
     setLoading(true);
 
     try {
-      // Existing order API — no backend changes required.
-      const order = await placeOrder({
-        customerName: finalCustomerName,
-        phone: finalPhone,
-        address: finalAddress,
-        items: cart.map((item) => ({
-          menuItemId: item._id,
-          quantity: item.quantity,
-        })),
-      });
+      // Backend verifies restaurant delivery coverage
+      // before creating the COD order.
+      const order = await placeOrder(payload);
 
-      // Clear cart only after a successful order.
+      // Only clear cart after successful order creation.
       clearCart();
 
-      // Redirect to the existing success page.
       router.push(
         `/order-success?orderId=${encodeURIComponent(
           order._id
@@ -247,7 +455,7 @@ export default function CheckoutPage() {
     }
   };
 
-  // Wait until authentication and cart data have loaded.
+  // Initial loading state
   if (authChecking || !loaded) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -262,7 +470,7 @@ export default function CheckoutPage() {
     );
   }
 
-  // Authentication required
+  // Login required
   if (!isAuthenticated) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 px-6">
@@ -272,8 +480,8 @@ export default function CheckoutPage() {
           </h1>
 
           <p className="mt-4 text-gray-600">
-            Please login to your FoodNest account before
-            placing an order.
+            Please login to your FoodNest account
+            before placing an order.
           </p>
 
           {error && (
@@ -323,12 +531,19 @@ export default function CheckoutPage() {
   return (
     <main className="min-h-screen bg-gray-50 px-6 py-12">
       <div className="mx-auto max-w-6xl">
-        <h1 className="mb-8 text-3xl font-bold text-gray-900">
-          Checkout
-        </h1>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Checkout
+          </h1>
+
+          <p className="mt-2 text-gray-600">
+            Confirm your delivery location and
+            complete your order.
+          </p>
+        </div>
 
         <div className="grid gap-8 lg:grid-cols-3">
-          {/* Delivery details and order form */}
+          {/* Checkout form */}
           <form
             onSubmit={handlePlaceOrder}
             className="space-y-6 rounded-xl bg-white p-6 shadow lg:col-span-2"
@@ -337,7 +552,7 @@ export default function CheckoutPage() {
               Delivery Details
             </h2>
 
-            {/* Address selection */}
+            {/* Saved/manual address selection */}
             <section className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 Choose Delivery Address
@@ -356,6 +571,7 @@ export default function CheckoutPage() {
                     >
                       Saved addresses could not be loaded:{" "}
                       {addressesError}
+
                       <span className="mt-1 block">
                         You can still enter your delivery
                         details manually.
@@ -371,9 +587,10 @@ export default function CheckoutPage() {
                           name="addressMode"
                           checked={addressMode === "saved"}
                           disabled={loading}
-                          onChange={() =>
-                            setAddressMode("saved")
-                          }
+                          onChange={() => {
+                            setAddressMode("saved");
+                            setError("");
+                          }}
                           className="accent-orange-500"
                         />
                         Use Saved Address
@@ -385,9 +602,10 @@ export default function CheckoutPage() {
                           name="addressMode"
                           checked={addressMode === "manual"}
                           disabled={loading}
-                          onChange={() =>
-                            setAddressMode("manual")
-                          }
+                          onChange={() => {
+                            setAddressMode("manual");
+                            setError("");
+                          }}
                           className="accent-orange-500"
                         />
                         Enter Manually
@@ -400,17 +618,67 @@ export default function CheckoutPage() {
                       <SavedAddressSelector
                         addresses={savedAddresses}
                         selectedId={selectedAddressId}
-                        onSelect={setSelectedAddressId}
+                        onSelect={(id) => {
+                          setSelectedAddressId(id);
+                          setError("");
+                        }}
                         disabled={loading}
                       />
+                    )}
+
+                  {addressMode === "saved" &&
+                    selectedAddress &&
+                    !savedAddressHasArea && (
+                      <div
+                        role="alert"
+                        className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900"
+                      >
+                        <p className="font-semibold">
+                          Delivery area missing
+                        </p>
+
+                        <p className="mt-1">
+                          This saved address does not
+                          have a delivery area. Please
+                          update it before ordering,
+                          or choose manual entry.
+                        </p>
+
+                        <Link
+                          href="/profile/addresses"
+                          className="mt-2 inline-block font-semibold text-orange-600 hover:underline"
+                        >
+                          Update Saved Address
+                        </Link>
+                      </div>
+                    )}
+
+                  {addressMode === "saved" &&
+                    selectedAddress?.area?.trim() && (
+                      <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                        <p className="text-sm font-semibold text-gray-900">
+                          Selected Delivery Location
+                        </p>
+
+                        <p className="mt-1 text-sm text-gray-700">
+                          📍 {selectedAddress.area},{" "}
+                          {selectedAddress.city}
+                        </p>
+
+                        <p className="mt-2 text-xs text-orange-700">
+                          Restaurant delivery coverage
+                          will be verified before
+                          your order is accepted.
+                        </p>
+                      </div>
                     )}
 
                   {savedAddresses.length === 0 &&
                     !addressesError && (
                       <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
-                        No saved addresses found. Enter your
-                        delivery details below, or add a
-                        saved address for future orders.
+                        No saved addresses found.
+                        Enter your delivery details
+                        below or add a saved address.
                       </p>
                     )}
 
@@ -431,7 +699,6 @@ export default function CheckoutPage() {
                   Enter Delivery Details
                 </h3>
 
-                {/* Full name */}
                 <div>
                   <label
                     htmlFor="customerName"
@@ -455,7 +722,6 @@ export default function CheckoutPage() {
                   />
                 </div>
 
-                {/* Mobile number */}
                 <div>
                   <label
                     htmlFor="phone"
@@ -480,7 +746,6 @@ export default function CheckoutPage() {
                   />
                 </div>
 
-                {/* Delivery address */}
                 <div>
                   <label
                     htmlFor="address"
@@ -500,8 +765,96 @@ export default function CheckoutPage() {
                     }
                     disabled={loading}
                     className="w-full rounded-lg border border-gray-300 p-3 text-gray-900 focus:border-orange-500 focus:outline-none disabled:opacity-60"
-                    placeholder="House number, street, area, city, state and PIN code"
+                    placeholder="House number, street, landmark, state and PIN code"
                   />
+                </div>
+
+                {/* Choose delivery city and area from restaurant data */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="deliveryCity"
+                      className="mb-2 block font-medium text-gray-700"
+                    >
+                      Delivery City
+                    </label>
+                    <select
+                      id="deliveryCity"
+                      required
+                      value={deliveryCity}
+                      onChange={(event) => {
+                        setDeliveryCity(event.target.value);
+                        setDeliveryArea("");
+                        setError("");
+                      }}
+                      disabled={loading || locationsLoading || Boolean(locationsError)}
+                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                    >
+                      <option value="">
+                        {locationsLoading ? "Loading cities..." : "Select your city"}
+                      </option>
+                      {cities.map((city) => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="deliveryArea"
+                      className="mb-2 block font-medium text-gray-700"
+                    >
+                      Delivery Area
+                    </label>
+                    <select
+                      id="deliveryArea"
+                      required
+                      value={deliveryArea}
+                      onChange={(event) => {
+                        setDeliveryArea(event.target.value);
+                        setError("");
+                      }}
+                      disabled={loading || locationsLoading || !deliveryCity || Boolean(locationsError)}
+                      className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 focus:border-orange-500 focus:outline-none disabled:opacity-60"
+                    >
+                      <option value="">
+                        {!deliveryCity ? "Select city first" : "Select your area"}
+                      </option>
+                      {areas.map((area) => (
+                        <option key={area} value={area}>{area}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {locationsError && (
+                  <p role="alert" className="text-sm text-red-600">
+                    Could not load delivery locations: {locationsError}
+                  </p>
+                )}
+                {!locationsLoading && !locationsError && cities.length === 0 && (
+                  <p className="text-sm text-amber-700">
+                    No delivery locations configured. Add city and deliveryAreas
+                    to your restaurant records.
+                  </p>
+                )}
+                {!locationsLoading && deliveryCity && areas.length === 0 && (
+                  <p className="text-sm text-amber-700">
+                    No delivery areas are configured for this city.
+                  </p>
+                )}
+
+                <div className="rounded-lg border border-orange-100 bg-orange-50 p-4">
+                  <p className="text-sm font-semibold text-gray-900">
+                    📍 Delivery Availability
+                  </p>
+
+                  <p className="mt-1 text-sm text-gray-600">
+                    FoodNest will verify that the
+                    restaurant delivers to your
+                    selected city and area before
+                    accepting the order.
+                  </p>
                 </div>
               </section>
             )}
@@ -523,7 +876,7 @@ export default function CheckoutPage() {
               </div>
             </section>
 
-            {/* Order error */}
+            {/* Checkout error */}
             {error && (
               <p
                 role="alert"
@@ -533,22 +886,55 @@ export default function CheckoutPage() {
               </p>
             )}
 
+            {/* Live delivery availability */}
+            {cartRestaurantError && (
+              <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                {cartRestaurantError}
+              </p>
+            )}
+            {!cartRestaurantError && !locationReady && (
+              <p className="rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">
+                {addressMode === "saved"
+                  ? "Select a saved address with a delivery area, or update your saved address."
+                  : "Select your delivery city and area to check availability."}
+              </p>
+            )}
+            {!cartRestaurantError && locationReady && currentDeliveryStatus && (
+              <p
+                role="status"
+                aria-live="polite"
+                className={`rounded-lg p-3 text-sm ${
+                  currentDeliveryStatus.state === "available"
+                    ? "bg-green-50 text-green-800"
+                    : currentDeliveryStatus.state === "checking"
+                      ? "bg-blue-50 text-blue-800"
+                      : "bg-red-50 text-red-700"
+                }`}
+              >
+                {currentDeliveryStatus.state === "available" ? "✓ " :
+                 currentDeliveryStatus.state === "checking" ? "… " : "✕ "}
+                {currentDeliveryStatus.message}
+              </p>
+            )}
+
             {/* Place order */}
             <button
               type="submit"
-              disabled={
-                loading ||
-                addressesLoading ||
-                !isAuthenticated
-              }
+              disabled={!canPlaceOrder}
               className="w-full rounded-lg bg-orange-500 px-6 py-3 font-semibold text-white transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading
-                ? "Placing Order..."
+                ? "Checking Delivery & Placing Order..."
                 : addressesLoading
                   ? "Loading Addresses..."
                   : "Place Order"}
             </button>
+
+            <p className="text-center text-xs text-gray-500">
+              Your order will only be accepted if
+              the restaurant serves your delivery
+              location.
+            </p>
           </form>
 
           {/* Existing order summary */}
@@ -587,8 +973,8 @@ export default function CheckoutPage() {
             </div>
 
             <p className="mt-4 text-xs text-gray-500">
-              The final amount is calculated using current
-              menu prices on the server.
+              The final amount is calculated using
+              current menu prices on the server.
             </p>
           </aside>
         </div>

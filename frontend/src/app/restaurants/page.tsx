@@ -1,12 +1,17 @@
 
 import { Suspense } from "react";
-import RestaurantFilters from "@/components/RestaurantFilters";
+
+import LocationAwareRestaurants from "@/components/LocationAwareRestaurants";
 import { getRestaurants } from "@/services/restaurantService";
 
 async function RestaurantList() {
   const restaurants = await getRestaurants();
 
-  return <RestaurantFilters restaurants={restaurants} />;
+  return (
+    <LocationAwareRestaurants
+      restaurants={restaurants}
+    />
+  );
 }
 
 export default function RestaurantsPage() {
@@ -15,6 +20,7 @@ export default function RestaurantsPage() {
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-orange-50 via-[#fff1e8] to-orange-100 px-6 py-16 md:py-20">
         <div className="pointer-events-none absolute -right-20 -top-24 h-80 w-80 rounded-full bg-orange-200/50 blur-3xl" />
+
         <div className="pointer-events-none absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-yellow-200/40 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl">
@@ -57,6 +63,7 @@ export default function RestaurantsPage() {
           fallback={
             <div className="space-y-8">
               <div className="h-24 animate-pulse rounded-3xl bg-orange-100" />
+
               <div className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
                 {[1, 2, 3].map((item) => (
                   <div

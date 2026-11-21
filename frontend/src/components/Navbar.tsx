@@ -4,7 +4,9 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
 import AuthNav from "./AuthNav";
+import LocationSelector from "./LocationSelector";
 
 const navLinks = [
   { name: "Home", href: "/", icon: "⌂" },
@@ -45,13 +47,11 @@ function NavigationLinks({
             href={link.href}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
-            className={`group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
+            className={`group relative flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all duration-200 ${
               active
                 ? "bg-orange-50 text-orange-600"
                 : "text-gray-600 hover:bg-orange-50 hover:text-orange-600"
-            } ${
-              mobile ? "w-full py-3" : ""
-            }`}
+            } ${mobile ? "w-full py-3" : ""}`}
           >
             <span className="text-lg transition-transform duration-200 group-hover:scale-110">
               {link.icon}
@@ -61,7 +61,7 @@ function NavigationLinks({
 
             {!mobile && (
               <span
-                className={`absolute bottom-0 left-4 right-4 h-0.5 rounded-full bg-orange-500 transition-transform duration-200 ${
+                className={`absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-orange-500 transition-transform duration-200 ${
                   active
                     ? "scale-x-100"
                     : "scale-x-0 group-hover:scale-x-100"
@@ -75,7 +75,7 @@ function NavigationLinks({
   );
 }
 
-// usePathname is isolated inside Suspense.
+// Navigation links with active pathname
 function PathnameNavigation({
   mobile = false,
   onNavigate,
@@ -100,18 +100,18 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-orange-100 bg-white/95 shadow-sm backdrop-blur-md">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
+      <nav className="mx-auto flex max-w-[1440px] items-center justify-between gap-2 px-3 py-3 sm:px-5 lg:px-6">
         {/* FoodNest logo */}
         <Link
           href="/"
           onClick={() => setMobileMenuOpen(false)}
           className="flex shrink-0 items-center gap-2"
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-xl text-white shadow-sm">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500 text-lg text-white shadow-sm sm:h-10 sm:w-10">
             🍴
           </span>
 
-          <span className="text-2xl font-extrabold tracking-tight text-orange-600">
+          <span className="text-xl font-extrabold tracking-tight text-orange-600 sm:text-2xl">
             Food
             <span className="text-gray-900">
               Nest
@@ -119,8 +119,8 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Desktop navigation */}
-        <div className="hidden items-center gap-1 lg:flex">
+        {/* Desktop navigation links */}
+        <div className="hidden items-center gap-0 xl:flex">
           <Suspense
             fallback={
               <NavigationLinks pathname={null} />
@@ -130,12 +130,17 @@ export default function Navbar() {
           </Suspense>
         </div>
 
-        {/* Authentication and mobile toggle */}
-        <div className="flex items-center gap-3">
-          <div className="hidden lg:block">
+        {/* Location, authentication and menu */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Small Deliver To button */}
+          <LocationSelector />
+
+          {/* Desktop authentication and Admin Dashboard */}
+          <div className="hidden shrink-0 xl:block">
             <AuthNav />
           </div>
 
+          {/* Mobile and tablet menu button */}
           <button
             type="button"
             onClick={() =>
@@ -148,22 +153,22 @@ export default function Navbar() {
             }
             aria-expanded={mobileMenuOpen}
             aria-controls="mobile-navigation"
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-orange-100 bg-orange-50 text-orange-600 transition hover:bg-orange-100 lg:hidden"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-100 bg-orange-50 text-orange-600 transition hover:bg-orange-100 xl:hidden"
           >
-            <span className="text-2xl">
+            <span className="text-xl">
               {mobileMenuOpen ? "✕" : "☰"}
             </span>
           </button>
         </div>
       </nav>
 
-      {/* Mobile navigation */}
+      {/* Mobile and tablet navigation */}
       {mobileMenuOpen && (
         <div
           id="mobile-navigation"
-          className="border-t border-orange-100 bg-white px-5 pb-5 pt-3 shadow-lg lg:hidden"
+          className="border-t border-orange-100 bg-white px-5 pb-5 pt-3 shadow-lg xl:hidden"
         >
-          <div className="mx-auto flex max-w-7xl flex-col gap-1">
+          <div className="mx-auto flex max-w-[1440px] flex-col gap-1">
             <Suspense
               fallback={
                 <NavigationLinks
@@ -183,6 +188,7 @@ export default function Navbar() {
               />
             </Suspense>
 
+            {/* Authentication and Admin Dashboard */}
             <div className="mt-4 border-t border-gray-100 pt-4">
               <AuthNav />
             </div>

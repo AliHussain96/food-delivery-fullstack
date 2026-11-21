@@ -11,6 +11,7 @@ import addressRoutes from "./routes/addressRoutes";
 import analyticsRoutes from "./routes/analyticsRoutes";
 import reviewRoutes from "./routes/reviewRoutes";
 import favoriteRoutes from "./routes/favoriteRoutes";
+import deliveryRoutes from "./routes/deliveryRoutes";
 
 const app = express();
 
@@ -66,5 +67,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/reviews", reviewRoutes);
 
 app.use("/api/favorites", favoriteRoutes);
+
+app.use("/api/delivery", deliveryRoutes);
 
 export default app;

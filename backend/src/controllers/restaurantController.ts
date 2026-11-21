@@ -1,4 +1,3 @@
-
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Restaurant from "../models/Restaurant";
@@ -6,10 +5,40 @@ import Restaurant from "../models/Restaurant";
 // GET: Retrieve all restaurants
 export async function getRestaurants(
   req: Request,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
-    const restaurants = await Restaurant.find();
+    const city =
+      typeof req.query.city === "string" ? req.query.city.trim() : "";
+
+    const area =
+      typeof req.query.area === "string" ? req.query.area.trim() : "";
+
+    if (area && !city) {
+      res.status(400).json({
+        success: false,
+        message: "City is required when filtering by area",
+      });
+      return;
+    }
+
+    const filter: Record<string, unknown> = {};
+
+    if (city) {
+      filter.city = new RegExp(
+        `^${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "i",
+      );
+    }
+
+    if (area) {
+      filter.deliveryAreas = new RegExp(
+        `^${area.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "i",
+      );
+    }
+
+    const restaurants = await Restaurant.find(filter);
 
     res.status(200).json({
       success: true,
@@ -17,6 +46,8 @@ export async function getRestaurants(
       data: restaurants,
     });
   } catch (error) {
+    console.error("Get restaurants error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch restaurants",
@@ -27,7 +58,7 @@ export async function getRestaurants(
 // GET: Retrieve restaurant by ID
 export async function getRestaurantById(
   req: Request<{ id: string }>,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const { id } = req.params;
@@ -65,7 +96,7 @@ export async function getRestaurantById(
 // POST: Create a new restaurant
 export async function createRestaurant(
   req: Request,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const restaurant = await Restaurant.create(req.body);
@@ -94,7 +125,7 @@ export async function createRestaurant(
 // PATCH: Update restaurant details
 export async function updateRestaurant(
   req: Request<{ id: string }>,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const { id } = req.params;
@@ -110,10 +141,12 @@ export async function updateRestaurant(
     const allowedFields = [
       "name",
       "cuisine",
-      "rating",
       "deliveryTime",
       "image",
       "description",
+      "city",
+      "area",
+      "deliveryAreas",
     ];
 
     const updates: Record<string, unknown> = {};
@@ -130,7 +163,7 @@ export async function updateRestaurant(
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     if (!restaurant) {
@@ -165,7 +198,7 @@ export async function updateRestaurant(
 // DELETE: Remove a restaurant
 export async function deleteRestaurant(
   req: Request<{ id: string }>,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const { id } = req.params;

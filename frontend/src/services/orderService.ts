@@ -2,12 +2,22 @@
 import type { Order } from "@/types/order";
 
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:5000";
 
+// Updated for Step 25.7
 export interface PlaceOrderInput {
   customerName: string;
   phone: string;
   address: string;
+
+  // Saved address checkout
+  addressId?: string;
+
+  // Manual address checkout
+  city?: string;
+  area?: string;
+
   items: {
     menuItemId: string;
     quantity: number;
@@ -23,17 +33,27 @@ interface ApiResponse<T> {
 async function parseResponse<T>(
   response: Response
 ): Promise<T> {
-  const result: ApiResponse<T> = await response.json();
+  let result: ApiResponse<T>;
+
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(
+      `Invalid server response: ${response.status}`
+    );
+  }
 
   if (!response.ok || !result.success || !result.data) {
     throw new Error(
-      result.message || `Request failed: ${response.status}`
+      result.message ||
+        `Request failed: ${response.status}`
     );
   }
 
   return result.data;
 }
 
+// POST /api/orders
 export async function placeOrder(
   orderData: PlaceOrderInput
 ): Promise<Order> {
@@ -49,6 +69,7 @@ export async function placeOrder(
   return parseResponse<Order>(response);
 }
 
+// GET /api/orders
 export async function getAllOrders(): Promise<Order[]> {
   const response = await fetch(`${API_URL}/api/orders`, {
     method: "GET",
@@ -59,11 +80,7 @@ export async function getAllOrders(): Promise<Order[]> {
   return parseResponse<Order[]>(response);
 }
 
-
-
-/**
- * Fetch a single order by ID.
- */
+// GET /api/orders/:id
 export async function getOrderById(
   orderId: string
 ): Promise<Order> {

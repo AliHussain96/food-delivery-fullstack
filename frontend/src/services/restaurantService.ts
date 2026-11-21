@@ -17,9 +17,32 @@ interface RestaurantDetailsResponse {
   data: Restaurant;
 }
 
-// Fetch all restaurants
-export async function getRestaurants(): Promise<Restaurant[]> {
-  const response = await fetch(`${API_URL}/api/restaurants`, {
+export interface RestaurantLocationFilter {
+  city?: string;
+  area?: string;
+}
+
+// Fetch restaurants, optionally filtered by location.
+export async function getRestaurants(
+  filters: RestaurantLocationFilter = {}
+): Promise<Restaurant[]> {
+  const params = new URLSearchParams();
+
+  if (filters.city?.trim()) {
+    params.set("city", filters.city.trim());
+  }
+
+  if (filters.area?.trim()) {
+    params.set("area", filters.area.trim());
+  }
+
+  const query = params.toString();
+
+  const url = `${API_URL}/api/restaurants${
+    query ? `?${query}` : ""
+  }`;
+
+  const response = await fetch(url, {
     cache: "no-store",
   });
 
@@ -27,7 +50,8 @@ export async function getRestaurants(): Promise<Restaurant[]> {
     throw new Error("Failed to fetch restaurants");
   }
 
-  const result: RestaurantListResponse = await response.json();
+  const result: RestaurantListResponse =
+    await response.json();
 
   if (!result.success || !Array.isArray(result.data)) {
     throw new Error("Invalid restaurant API response");
@@ -36,7 +60,7 @@ export async function getRestaurants(): Promise<Restaurant[]> {
   return result.data;
 }
 
-// Fetch a restaurant by MongoDB ID
+// Fetch a restaurant by MongoDB ID.
 export async function getRestaurantById(
   id: string
 ): Promise<Restaurant | null> {
@@ -47,7 +71,10 @@ export async function getRestaurantById(
     }
   );
 
-  if (response.status === 404 || response.status === 400) {
+  if (
+    response.status === 404 ||
+    response.status === 400
+  ) {
     return null;
   }
 
@@ -55,7 +82,8 @@ export async function getRestaurantById(
     throw new Error("Failed to fetch restaurant");
   }
 
-  const result: RestaurantDetailsResponse = await response.json();
+  const result: RestaurantDetailsResponse =
+    await response.json();
 
   if (!result.success || !result.data) {
     throw new Error("Invalid restaurant API response");

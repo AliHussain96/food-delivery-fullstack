@@ -1,12 +1,6 @@
-
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -21,16 +15,14 @@ import {
   setDefaultAddress,
 } from "@/services/addressService";
 
-import type {
-  AddressInput,
-  SavedAddress,
-} from "@/types/address";
+import type { AddressInput, SavedAddress } from "@/types/address";
 
 const emptyForm: AddressInput = {
   label: "Home",
   fullName: "",
   phone: "",
   addressLine: "",
+  area: "",
   city: "",
   state: "",
   pincode: "",
@@ -74,9 +66,7 @@ export default function SavedAddressesPage() {
       } catch (err) {
         if (active) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load addresses"
+            err instanceof Error ? err.message : "Failed to load addresses",
           );
         }
       } finally {
@@ -93,7 +83,7 @@ export default function SavedAddressesPage() {
 
   function updateField<K extends keyof AddressInput>(
     field: K,
-    value: AddressInput[K]
+    value: AddressInput[K],
   ) {
     setForm((previous) => ({
       ...previous,
@@ -117,6 +107,7 @@ export default function SavedAddressesPage() {
       fullName: address.fullName,
       phone: address.phone,
       addressLine: address.addressLine,
+      area: address.area ?? "",
       city: address.city,
       state: address.state,
       pincode: address.pincode,
@@ -126,19 +117,27 @@ export default function SavedAddressesPage() {
     setError("");
     setSuccess("");
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
-  ) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (
-      !/^[0-9]{10}$/.test(form.phone) ||
-      !/^[0-9]{6}$/.test(form.pincode)
-    ) {
+    if (!/^[0-9]{10}$/.test(form.phone) || !/^[0-9]{6}$/.test(form.pincode)) {
       setError("Enter a valid phone number and 6-digit PIN code.");
+      return;
+    }
+
+    if (!form.area.trim()) {
+      setError("Please enter your delivery area.");
+      return;
+    }
+
+    if (form.area.trim().length > 100) {
+      setError("Delivery area cannot exceed 100 characters.");
       return;
     }
 
@@ -161,11 +160,7 @@ export default function SavedAddressesPage() {
       setEditingId(null);
       setForm({ ...emptyForm });
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to save address"
-      );
+      setError(err instanceof Error ? err.message : "Unable to save address");
     } finally {
       setBusy(false);
     }
@@ -191,11 +186,7 @@ export default function SavedAddressesPage() {
 
       setSuccess("Address deleted successfully.");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to delete address"
-      );
+      setError(err instanceof Error ? err.message : "Unable to delete address");
     } finally {
       setBusy(false);
     }
@@ -213,9 +204,7 @@ export default function SavedAddressesPage() {
       setSuccess("Default address updated successfully.");
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update default address"
+        err instanceof Error ? err.message : "Unable to update default address",
       );
     } finally {
       setBusy(false);
@@ -231,11 +220,7 @@ export default function SavedAddressesPage() {
   }
 
   if (!user) {
-    return (
-      <main className="p-10 text-center">
-        Redirecting to login...
-      </main>
-    );
+    return <main className="p-10 text-center">Redirecting to login...</main>;
   }
 
   return (
@@ -275,7 +260,10 @@ export default function SavedAddressesPage() {
         )}
 
         {success && (
-          <p role="status" className="rounded-lg bg-green-50 p-4 text-green-700">
+          <p
+            role="status"
+            className="rounded-lg bg-green-50 p-4 text-green-700"
+          >
             {success}
           </p>
         )}
@@ -297,7 +285,7 @@ export default function SavedAddressesPage() {
                   onChange={(event) =>
                     updateField(
                       "label",
-                      event.target.value as AddressInput["label"]
+                      event.target.value as AddressInput["label"],
                     )
                   }
                   className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
@@ -329,35 +317,45 @@ export default function SavedAddressesPage() {
                   pattern="[0-9]{10}"
                   maxLength={10}
                   value={form.phone}
-                  onChange={(event) =>
-                    updateField("phone", event.target.value)
-                  }
+                  onChange={(event) => updateField("phone", event.target.value)}
                   className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
                 />
               </label>
 
+              {/* City */}
               <label className="space-y-2 text-sm font-medium text-gray-700">
                 <span>City</span>
                 <input
                   required
                   maxLength={100}
                   value={form.city}
-                  onChange={(event) =>
-                    updateField("city", event.target.value)
-                  }
+                  onChange={(event) => updateField("city", event.target.value)}
                   className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
                 />
               </label>
 
+              {/* NEW: Delivery Area */}
+              <label className="space-y-2 text-sm font-medium text-gray-700">
+                <span>Delivery Area</span>
+                <input
+                  required
+                  maxLength={100}
+                  value={form.area}
+                  onChange={(event) => updateField("area", event.target.value)}
+                  placeholder="e.g. Hiran Magri"
+                  disabled={busy}
+                  className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
+                />
+              </label>
+
+              {/* State */}
               <label className="space-y-2 text-sm font-medium text-gray-700">
                 <span>State</span>
                 <input
                   required
                   maxLength={100}
                   value={form.state}
-                  onChange={(event) =>
-                    updateField("state", event.target.value)
-                  }
+                  onChange={(event) => updateField("state", event.target.value)}
                   className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
                 />
               </label>

@@ -1,4 +1,3 @@
-
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IAddress extends Document {
@@ -7,6 +6,7 @@ export interface IAddress extends Document {
   fullName: string;
   phone: string;
   addressLine: string;
+  area?: string; // NEW
   city: string;
   state: string;
   pincode: string;
@@ -70,12 +70,18 @@ const addressSchema = new Schema<IAddress>(
       match: /^[0-9]{6}$/,
     },
 
+    area: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+    },
+
     isDefault: {
       type: Boolean,
       default: false,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Efficiently fetch user addresses, newest first.
@@ -92,11 +98,10 @@ addressSchema.index(
     partialFilterExpression: {
       isDefault: true,
     },
-  }
+  },
 );
 
 const Address =
-  mongoose.models.Address ||
-  mongoose.model<IAddress>("Address", addressSchema);
+  mongoose.models.Address || mongoose.model<IAddress>("Address", addressSchema);
 
 export default Address as mongoose.Model<IAddress>;

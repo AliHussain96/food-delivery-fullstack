@@ -1,6 +1,9 @@
-import mongoose, { Schema, Document } from "mongoose";
 
-// TypeScript interface
+import mongoose, {
+  Schema,
+  Document,
+} from "mongoose";
+
 export interface IRestaurant extends Document {
   name: string;
   cuisine: string;
@@ -8,11 +11,14 @@ export interface IRestaurant extends Document {
   deliveryTime: string;
   image: string;
   description: string;
-  // rating: number;
   totalReviews: number;
+
+  // Step 25: Restaurant location
+  city?: string;
+  area?: string;
+  deliveryAreas: string[];
 }
 
-// Mongoose schema
 const restaurantSchema = new Schema<IRestaurant>(
   {
     name: {
@@ -54,13 +60,41 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: String,
       required: true,
     },
+
+    // Restaurant city
+    city: {
+      type: String,
+      trim: true,
+    },
+
+    // Restaurant neighborhood
+    area: {
+      type: String,
+      trim: true,
+    },
+
+    // Supported delivery neighborhoods
+    deliveryAreas: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-// Create model
-const Restaurant = mongoose.model<IRestaurant>("Restaurant", restaurantSchema);
+// Helps with location-based queries.
+restaurantSchema.index({
+  city: 1,
+  deliveryAreas: 1,
+});
+
+const Restaurant =
+  mongoose.models.Restaurant ||
+  mongoose.model<IRestaurant>(
+    "Restaurant",
+    restaurantSchema
+  );
 
 export default Restaurant;

@@ -1,4 +1,3 @@
-
 import type { Response } from "express";
 import mongoose from "mongoose";
 
@@ -8,11 +7,7 @@ import type { AuthRequest } from "../middleware/authMiddleware";
 const labels = ["Home", "Work", "Other"];
 
 function validateAddress(body: unknown) {
-  if (
-    !body ||
-    typeof body !== "object" ||
-    Array.isArray(body)
-  ) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return null;
   }
 
@@ -22,16 +17,16 @@ function validateAddress(body: unknown) {
     "fullName",
     "phone",
     "addressLine",
+    "area",
     "city",
     "state",
     "pincode",
   ] as const;
 
+  const area = (data.area as string).trim();
+
   for (const field of fields) {
-    if (
-      typeof data[field] !== "string" ||
-      !(data[field] as string).trim()
-    ) {
+    if (typeof data[field] !== "string" || !(data[field] as string).trim()) {
       return null;
     }
   }
@@ -63,6 +58,7 @@ function validateAddress(body: unknown) {
     fullName,
     phone,
     addressLine,
+    area,
     city,
     state,
     pincode,
@@ -72,7 +68,7 @@ function validateAddress(body: unknown) {
 // GET /api/addresses
 export async function getAddresses(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const addresses = await Address.find({
@@ -100,7 +96,7 @@ export async function getAddresses(
 
 export async function createAddress(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const userId = req.userId;
@@ -154,19 +150,15 @@ export async function createAddress(
   }
 }
 
-
 // PATCH /api/addresses/:id
 export async function updateAddress(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const id = req.params.id;
 
-    if (
-      typeof id !== "string" ||
-      !mongoose.isValidObjectId(id)
-    ) {
+    if (typeof id !== "string" || !mongoose.isValidObjectId(id)) {
       res.status(400).json({
         success: false,
         message: "Invalid address ID",
@@ -193,7 +185,7 @@ export async function updateAddress(
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     if (!address) {
@@ -222,15 +214,12 @@ export async function updateAddress(
 // DELETE /api/addresses/:id
 export async function deleteAddress(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const id = req.params.id;
 
-    if (
-      typeof id !== "string" ||
-      !mongoose.isValidObjectId(id)
-    ) {
+    if (typeof id !== "string" || !mongoose.isValidObjectId(id)) {
       res.status(400).json({
         success: false,
         message: "Invalid address ID",
@@ -263,7 +252,7 @@ export async function deleteAddress(
       if (replacement) {
         await Address.updateOne(
           { _id: replacement._id, userId: req.userId },
-          { $set: { isDefault: true } }
+          { $set: { isDefault: true } },
         );
       }
     } else {
@@ -287,15 +276,12 @@ export async function deleteAddress(
 // PATCH /api/addresses/:id/default
 export async function setDefaultAddress(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const id = req.params.id;
 
-    if (
-      typeof id !== "string" ||
-      !mongoose.isValidObjectId(id)
-    ) {
+    if (typeof id !== "string" || !mongoose.isValidObjectId(id)) {
       res.status(400).json({
         success: false,
         message: "Invalid address ID",
@@ -319,7 +305,7 @@ export async function setDefaultAddress(
     if (!address.isDefault) {
       await Address.updateMany(
         { userId: req.userId, isDefault: true },
-        { $set: { isDefault: false } }
+        { $set: { isDefault: false } },
       );
 
       address.isDefault = true;

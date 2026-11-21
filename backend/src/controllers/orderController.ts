@@ -1,18 +1,30 @@
-
 import { Response } from "express";
 import mongoose from "mongoose";
 import Order from "../models/Orders";
 import MenuItem from "../models/MenuItem";
 import { AuthRequest } from "../middleware/authMiddleware";
+import Restaurant from "../models/Restaurant";
+import Address from "../models/Address";
+import { isDeliveryAvailable } from "../utils/deliveryAvailability";
 
 // POST /api/orders
+
 export async function createOrder(
   req: AuthRequest,
   res: Response
 ): Promise<void> {
   try {
     const userId = req.userId;
-    const { customerName, phone, address, items } = req.body ?? {};
+
+    const {
+      customerName,
+      phone,
+      address,
+      addressId,
+      city,
+      area,
+      items,
+    } = req.body ?? {};
 
     if (!userId) {
       res.status(401).json({
@@ -22,39 +34,31 @@ export async function createOrder(
       return;
     }
 
-    if (
-      typeof customerName !== "string" ||
-      !customerName.trim() ||
-      typeof phone !== "string" ||
-      !/^[0-9]{10}$/.test(phone) ||
-      typeof address !== "string" ||
-      !address.trim() ||
-      !Array.isArray(items) ||
-      items.length === 0
-    ) {
+    if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({
         success: false,
-        message: "Invalid checkout details",
+        message: "Your cart is empty or invalid",
       });
       return;
     }
 
-    const validItems = items.every(
-      (item: unknown) => {
-        if (!item || typeof item !== "object") return false;
-
-        const entry = item as Record<string, unknown>;
-
-        return (
-          typeof entry.menuItemId === "string" &&
-          mongoose.isValidObjectId(entry.menuItemId) &&
-          typeof entry.quantity === "number" &&
-          Number.isInteger(entry.quantity) &&
-          entry.quantity > 0 &&
-          entry.quantity <= 100
-        );
+    // Validate menu items.
+    const validItems = items.every((item: unknown) => {
+      if (!item || typeof item !== "object") {
+        return false;
       }
-    );
+
+      const entry = item as Record<string, unknown>;
+
+      return (
+        typeof entry.menuItemId === "string" &&
+        mongoose.isValidObjectId(entry.menuItemId) &&
+        typeof entry.quantity === "number" &&
+        Number.isInteger(entry.quantity) &&
+        entry.quantity > 0 &&
+        entry.quantity <= 100
+      );
+    });
 
     if (!validItems) {
       res.status(400).json({
@@ -69,12 +73,15 @@ export async function createOrder(
       quantity: number;
     }[];
 
-    // Combine duplicate menu item IDs.
+    // Combine duplicate menu items.
     const quantities = new Map<string, number>();
 
     for (const item of requestedItems) {
-      const current = quantities.get(item.menuItemId) ?? 0;
-      const next = current + item.quantity;
+      const id = String(
+        new mongoose.Types.ObjectId(item.menuItemId)
+      );
+
+      const next = (quantities.get(id) ?? 0) + item.quantity;
 
       if (next > 100) {
         res.status(400).json({
@@ -84,9 +91,10 @@ export async function createOrder(
         return;
       }
 
-      quantities.set(item.menuItemId, next);
+      quantities.set(id, next);
     }
 
+    // Load available menu items from MongoDB.
     const menuItems = await MenuItem.find({
       _id: { $in: [...quantities.keys()] },
       isAvailable: true,
@@ -100,6 +108,132 @@ export async function createOrder(
       return;
     }
 
+    // All menu items must belong to one restaurant.
+    const restaurantIds = [
+      ...new Set(
+        menuItems.map((item) => String(item.restaurantId))
+      ),
+    ];
+
+    if (restaurantIds.length !== 1) {
+      res.status(400).json({
+        success: false,
+        message:
+          "Please order from one restaurant at a time.",
+      });
+      return;
+    }
+
+    const restaurant = await Restaurant.findById(
+      restaurantIds[0]
+    );
+
+    if (!restaurant) {
+      res.status(404).json({
+        success: false,
+        message: "Restaurant not found",
+      });
+      return;
+    }
+
+    let deliveryName = "";
+    let deliveryPhone = "";
+    let deliveryAddress = "";
+    let deliveryCity = "";
+    let deliveryArea = "";
+
+    // Saved address: load the user's actual record.
+    if (addressId !== undefined && addressId !== null) {
+      if (
+        typeof addressId !== "string" ||
+        !mongoose.isValidObjectId(addressId)
+      ) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid saved address ID",
+        });
+        return;
+      }
+
+      const savedAddress = await Address.findOne({
+        _id: addressId,
+        userId,
+      });
+
+      if (!savedAddress) {
+        res.status(404).json({
+          success: false,
+          message: "Saved delivery address not found",
+        });
+        return;
+      }
+
+      deliveryName = savedAddress.fullName.trim();
+      deliveryPhone = savedAddress.phone.trim();
+      deliveryCity = savedAddress.city.trim();
+      deliveryArea = savedAddress.area?.trim() ?? "";
+
+      deliveryAddress = [
+        savedAddress.addressLine,
+        savedAddress.area,
+        savedAddress.city,
+        savedAddress.state,
+        savedAddress.pincode,
+      ]
+        .filter(Boolean)
+        .join(", ");
+    } else {
+      // Manual address: require structured location.
+      if (
+        typeof customerName !== "string" ||
+        !customerName.trim() ||
+        customerName.trim().length > 100 ||
+        typeof phone !== "string" ||
+        !/^[0-9]{10}$/.test(phone.trim()) ||
+        typeof address !== "string" ||
+        !address.trim() ||
+        address.trim().length > 500 ||
+        typeof city !== "string" ||
+        !city.trim() ||
+        city.trim().length > 100 ||
+        typeof area !== "string" ||
+        !area.trim() ||
+        area.trim().length > 100
+      ) {
+        res.status(400).json({
+          success: false,
+          message:
+            "Please provide valid delivery details, city and area.",
+        });
+        return;
+      }
+
+      deliveryName = customerName.trim();
+      deliveryPhone = phone.trim();
+      deliveryAddress = address.trim();
+      deliveryCity = city.trim();
+      deliveryArea = area.trim();
+    }
+
+    // Mandatory server-side delivery validation.
+    const available = isDeliveryAvailable(
+      restaurant,
+      {
+        city: deliveryCity,
+        area: deliveryArea,
+      }
+    );
+
+    if (!available) {
+      res.status(422).json({
+        success: false,
+        message:
+          "This restaurant does not deliver to your selected city or area.",
+      });
+      return;
+    }
+
+    // Use current MongoDB prices, not browser prices.
     const orderItems = menuItems.map((menuItem) => ({
       menuItemId: menuItem._id,
       name: menuItem.name,
@@ -112,11 +246,12 @@ export async function createOrder(
       0
     );
 
+    // Create only after every validation succeeds.
     const order = await Order.create({
       userId,
-      customerName: customerName.trim(),
-      phone,
-      address: address.trim(),
+      customerName: deliveryName,
+      phone: deliveryPhone,
+      address: deliveryAddress,
       items: orderItems,
       totalAmount,
       paymentMethod: "COD",
@@ -141,7 +276,7 @@ export async function createOrder(
 // GET /api/orders
 export async function getOrders(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const orders = await Order.find({
@@ -163,14 +298,13 @@ export async function getOrders(
   }
 }
 
-
 /**
  * GET /api/orders/:id
  * Fetch an individual order belonging to the logged-in user.
  */
 export async function getOrderById(
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> {
   try {
     const userId = req.userId;
@@ -184,10 +318,7 @@ export async function getOrderById(
       return;
     }
 
-    if (
-      typeof id !== "string" ||
-      !mongoose.isValidObjectId(id)
-    ) {
+    if (typeof id !== "string" || !mongoose.isValidObjectId(id)) {
       res.status(400).json({
         success: false,
         message: "Invalid order ID",
@@ -224,7 +355,7 @@ export async function getOrderById(
 
 export const cancelOrder = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
 ): Promise<void> => {
   try {
     const userId = req.userId;
@@ -238,10 +369,7 @@ export const cancelOrder = async (
       return;
     }
 
-    if (
-      typeof orderId !== "string" ||
-      !mongoose.isValidObjectId(orderId)
-    ) {
+    if (typeof orderId !== "string" || !mongoose.isValidObjectId(orderId)) {
       res.status(400).json({
         success: false,
         message: "Invalid order ID.",
@@ -263,7 +391,7 @@ export const cancelOrder = async (
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     if (cancelledOrder) {
@@ -292,8 +420,7 @@ export const cancelOrder = async (
 
     res.status(409).json({
       success: false,
-      message:
-        "This order can no longer be cancelled.",
+      message: "This order can no longer be cancelled.",
     });
   } catch (error) {
     console.error("Cancel order error:", error);

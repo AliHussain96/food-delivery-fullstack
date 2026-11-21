@@ -8,6 +8,12 @@ export interface Restaurant {
   deliveryTime: string;
   image: string;
   description: string;
+
+  // Step 25: Location fields
+  city?: string;
+  area?: string;
+  deliveryAreas?: string[];
+
   createdAt?: string;
   updatedAt?: string;
 }
